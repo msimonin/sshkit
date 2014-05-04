@@ -17,6 +17,7 @@ module SSHKit
       def checkout(*new_connection_args, &block)
         # Optimization: completely bypass the pool if idle_timeout is zero.
         key = new_connection_args.to_s
+        puts key
         return create_new_entry(new_connection_args, key, &block) if idle_timeout == 0
 
         find_live_entry(key) || create_new_entry(new_connection_args, key, &block)

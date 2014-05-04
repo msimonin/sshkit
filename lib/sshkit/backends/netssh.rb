@@ -1,5 +1,6 @@
 require 'net/ssh'
 require 'net/scp'
+require 'net/ssh/gateway'
 
 module Net
   module SSH
@@ -42,10 +43,12 @@ module SSHKit
       class Configuration
         attr_accessor :connection_timeout, :pty
         attr_writer :ssh_options
+        attr_accessor :gateway
 
         def ssh_options
           @ssh_options || {}
         end
+
       end
 
       include SSHKit::CommandHelper
@@ -175,19 +178,48 @@ module SSHKit
 
       def with_ssh
         host.ssh_options ||= Netssh.config.ssh_options
-        conn = self.class.pool.checkout(
-          String(host.hostname),
-          host.username,
-          host.netssh_options,
-          &Net::SSH.method(:start)
-        )
-        begin
+        host.gateway ||= Netssh.config.gateway
+        conn = nil
+
+        if (!host.gateway.nil?)
+          gateway = SSHKit::Host.new(host.gateway)
+          gateway.ssh_options ||= {}
+          conn = self.class.pool.checkout(
+            String(gateway.hostname),
+            gateway.user,
+            gateway.netssh_options,
+            &Net::SSH::Gateway.method(:new)
+          )
+          
+          priv = conn.connection.ssh(
+            String(host.hostname),
+            host.username,
+            host.netssh_options,
+          )
+
+         begin
+            yield priv
+          ensure
+            self.class.pool.checkin conn
+          end
+
+        else
+
+          conn = self.class.pool.checkout(
+            String(host.hostname),
+            host.username,
+            host.netssh_options,
+            &Net::SSH.method(:start)
+          )
+       begin
           yield conn.connection
         ensure
           self.class.pool.checkin conn
         end
-      end
+       end
 
+        
+      end
     end
   end
 
